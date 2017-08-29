@@ -91,6 +91,8 @@ struct _GstRTPBasePayload
 
   gint32   ts_offset;
   guint32  timestamp;
+  gboolean use_sys_timestamp;
+  guint32  cur_sys_timestamp;
   gint16   seqnum_offset;
   guint16  seqnum;
   gint64   max_ptime;

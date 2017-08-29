@@ -1,0 +1,48 @@
+
+" Neomake {{{
+let g:neomake_c_enabled_makers = ['clangcheck']
+let g:neomake_c_clangcheck_args = ['%:p',
+         \ '-p', g:localvimrc_script_dir.'/build',
+         \ ]
+
+" add compile_commands.json to deoplete-clang completion
+" let g:deoplete#sources#clang#clang_complete_database = g:localvimrc_script_dir.'/build'
+
+" make vim not confuse cpp/c
+augroup MyProject
+   autocmd!
+   autocmd BufNewFile,BufRead *.[ch] set filetype=c
+
+   " autocmd FileType c let b:dispatch = '(cd /home/slendl/Projects/gst/gst-plugins-base/build; ninja && sudo ninja install) && (cd /home/slendl/Projects/gst/gst-plugins-good/build; ninja && sudo ninja install)'
+
+   autocmd BufWritePost *.[ch] Neomake clangcheck
+
+   " autocmd User NeomakeFinished call OnNeomakeFinished()
+augroup END
+
+
+" function! OnNeomakeFinished()
+"    let context = g:neomake_hook_context
+"    if (context.jobinfo.exit_code == 0)
+"       echom "build gst-plugins-base|good finished successfully!"
+"    endif
+" endfunction
+
+" }}}
+
+" enable code style formater as configured in pre-commit hook
+let g:neoformat_enabled_c = ['glibgnuindent']
+
+set expandtab
+set tabstop=2
+set shiftwidth=2
+set softtabstop=2
+
+" fold preprocessor #ifdef
+nnoremap zn 0zf%
+nnoremap zN 0v2]#zf
+" zd > delete fold
+
+let g:fastfold_savehook = 0
+let g:fastfold_fdmhook = 0
+set foldnestmax=3

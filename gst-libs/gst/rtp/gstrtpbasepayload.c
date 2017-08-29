@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include <gst/rtp/gstrtpbuffer.h>
+#include <sys/time.h>
 
 #include "gstrtpbasepayload.h"
 
@@ -263,7 +264,7 @@ gst_rtp_base_payload_class_init (GstRTPBasePayloadClass * klass)
    **/
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_PTIME_MULTIPLE,
       g_param_spec_int64 ("ptime-multiple", "Packet time multiple",
-          "Force buffers to be multiples of this duration in ns (0 disables)",
+          "REALLY >> Force buffers to be multiples of this duration in ns (0 disables)",
           0, G_MAXINT64, DEFAULT_PTIME_MULTIPLE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
@@ -356,6 +357,8 @@ gst_rtp_base_payload_init (GstRTPBasePayload * rtpbasepayload, gpointer g_class)
 
   rtpbasepayload->priv->caps_max_ptime = DEFAULT_MAX_PTIME;
   rtpbasepayload->priv->prop_max_ptime = DEFAULT_MAX_PTIME;
+
+  rtpbasepayload->use_sys_timestamp = TRUE;
 }
 
 static void
@@ -1183,8 +1186,26 @@ gst_rtp_base_payload_prepare_push (GstRTPBasePayload * payload,
   }
 
   /* convert to RTP time */
-  if (priv->perfect_rtptime && data.offset != GST_BUFFER_OFFSET_NONE &&
-      priv->base_offset != GST_BUFFER_OFFSET_NONE) {
+  if (is_list && payload->use_sys_timestamp) {
+    data.rtptime = payload->cur_sys_timestamp;
+  } else if (payload->use_sys_timestamp) {
+    struct timeval now;
+    gettimeofday (&now, NULL);
+    now.tv_sec -= payload->ts_offset;   // apply given offset in seconds
+
+    GstClockTime now_gst_time = (guint64) ((guint64) now.tv_sec * GST_SECOND
+        + (guint64) now.tv_usec * GST_USECOND);
+    data.rtptime =
+        gst_util_uint64_scale_int (now_gst_time, payload->clock_rate,
+        GST_SECOND);
+
+    /* consider clock_rate */
+    GST_DEBUG_OBJECT (payload,
+        "Using system time [ %ld.%06ld ] with offset: %us as RTP timestamp %u clock-rate: %u",
+        now.tv_sec, now.tv_usec, payload->ts_offset, data.rtptime,
+        payload->clock_rate);
+  } else if (priv->perfect_rtptime && data.offset != GST_BUFFER_OFFSET_NONE
+      && priv->base_offset != GST_BUFFER_OFFSET_NONE) {
     /* generate perfect RTP time by adding together the base timestamp, the
      * running time of the first buffer and difference between the offset of the
      * first buffer and the offset of the current buffer. */
@@ -1292,6 +1313,24 @@ gst_rtp_base_payload_push_list (GstRTPBasePayload * payload,
 {
   GstFlowReturn res;
 
+
+  if (payload->use_sys_timestamp) {
+    struct timeval now;
+    gettimeofday (&now, NULL);
+    now.tv_sec -= payload->ts_offset;   // apply given offset in seconds
+
+    GstClockTime now_gst_time = (guint64) ((guint64) now.tv_sec * GST_SECOND
+        + (guint64) now.tv_usec * 1000);
+    payload->cur_sys_timestamp =
+        gst_util_uint64_scale_int (now_gst_time, payload->clock_rate,
+        GST_SECOND);
+
+    /* consider clock_rate */
+    GST_DEBUG_OBJECT (payload,
+        "Using system time [ %ld.%06ld ] with offset: %us as RTP timestamp %u clock-rate: %u",
+        now.tv_sec, now.tv_usec, payload->ts_offset, payload->cur_sys_timestamp,
+        payload->clock_rate);
+  }
   res = gst_rtp_base_payload_prepare_push (payload, list, TRUE);
 
   if (G_LIKELY (res == GST_FLOW_OK)) {
